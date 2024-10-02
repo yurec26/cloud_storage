@@ -5,15 +5,12 @@ import org.example.back.entity.*;
 import org.example.back.repository.FileRepository;
 import org.example.back.repository.UserRepository;
 import org.example.back.token.TokenGenerator;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
-
-import static org.example.back.constants.ResponseMessage.*;
 
 
 @Service
@@ -28,20 +25,20 @@ public class BackService {
         this.fileRepository = fileRepository;
     }
 
-    public ResponseEntity<?> login(LoginRequest loginRequest) {
+    public Token login(LoginRequest loginRequest) {
         Optional<User> optionalUser = userRepository
                 .findByLoginAndPassword(loginRequest.getLogin(), loginRequest.getPassword());
         if (optionalUser.isPresent()) {
             User user = optionalUser.get();
             user.setAuthToken(new Token(TokenGenerator.generateToken()));
             userRepository.save(user);
-            return ResponseEntity.ok(user.getAuthToken());
+            return user.getAuthToken();
         } else {
-            return new ResponseEntity<>(new ConfirmOperationDTO(BAD_CREDENTIALS), HttpStatus.BAD_REQUEST);
+            return null;
         }
     }
 
-    public void logout(Token tokenDirty) {
+    public String logout(Token tokenDirty) {
         tokenDirty.setAuthToken(tokenDirty.getAuthToken()
                 .replace("Bearer ", ""));
         Optional<User> optUser = userRepository.findByAuthToken(tokenDirty);
@@ -49,72 +46,62 @@ public class BackService {
             User user = optUser.get();
             user.setAuthToken(null);
             userRepository.save(user);
+            return user.getLogin();
         }
+        return null;
     }
 
-    public ResponseEntity<?> getList(int limit) {
+    public List<File> getList(int limit) {
         try {
-            List<File> fileList = fileRepository.listTopNFiles(limit);
-            return new ResponseEntity<>(fileList, HttpStatus.OK);
-        } catch (Exception e) {
-            return new ResponseEntity<>(new ConfirmOperationDTO(ERROR_GETTING_LIST), HttpStatus.INTERNAL_SERVER_ERROR);
+            return fileRepository.listTopNFiles(limit);
+        } catch (RuntimeException e) {
+            throw new RuntimeException(ResponseMessage.ERROR_GETTING_LIST);
         }
     }
 
-    public ResponseEntity<?> postFile(MultipartFile file, String filename) {
-        try {
-            File fileEntity = new File();
-            fileEntity.setSize(file.getSize());
-            fileEntity.setFilename(filename);
-            fileEntity.setContent(file.getBytes());
-            fileRepository.save(fileEntity);
-        } catch (Exception e) {
-            return new ResponseEntity<>(new ConfirmOperationDTO(BAD_REQUEST), HttpStatus.BAD_REQUEST);
-        }
-        return new ResponseEntity<>(new ConfirmOperationDTO(OK), HttpStatus.OK);
+    public void postFile(MultipartFile file, String filename) throws IOException {
+        File fileEntity = new File();
+        fileEntity.setSize(file.getSize());
+        fileEntity.setFilename(filename);
+        fileEntity.setContent(file.getBytes());
+        fileRepository.save(fileEntity);
     }
 
-    public ResponseEntity<?> getFile(String filename) {
+    public byte[] getFile(String filename) {
         try {
             Optional<File> optionalFile = fileRepository.findFileByFilename(filename);
-            if (optionalFile.isPresent()) {
-                return ResponseEntity.ok(optionalFile.get().getContent());
-            } else {
-                return new ResponseEntity<>(new ConfirmOperationDTO(BAD_REQUEST), HttpStatus.BAD_REQUEST);
-            }
-        } catch (Exception e) {
-            return new ResponseEntity<>(new ConfirmOperationDTO(ERROR_UPLOAD), HttpStatus.INTERNAL_SERVER_ERROR);
+            return optionalFile.map(File::getContent).orElse(null);
+        } catch (RuntimeException e) {
+            throw new RuntimeException(ResponseMessage.ERROR_UPLOAD);
         }
     }
 
-    public ResponseEntity<?> deleteFile(String filename) {
+    public void deleteFile(String filename) {
         Optional<File> optionalFile = fileRepository.findFileByFilename(filename);
         if (optionalFile.isPresent()) {
             File file = optionalFile.get();
             try {
                 fileRepository.delete(file);
-                return new ResponseEntity<>(ResponseMessage.OK, HttpStatus.OK);
-            } catch (Exception e) {
-                return new ResponseEntity<>(new ConfirmOperationDTO(ERROR_DELETE), HttpStatus.INTERNAL_SERVER_ERROR);
+            } catch (RuntimeException e) {
+                throw new RuntimeException(ResponseMessage.ERROR_DELETE);
             }
         } else {
-            return new ResponseEntity<>(new ConfirmOperationDTO(BAD_REQUEST), HttpStatus.BAD_REQUEST);
+            throw new RuntimeException(ResponseMessage.BAD_REQUEST);
         }
     }
 
-    public ResponseEntity<?> renameFile(String oldName, String newName) {
+    public void renameFile(String oldName, String newName) {
         Optional<File> optionalFile = fileRepository.findFileByFilename(oldName);
         if (optionalFile.isPresent()) {
             File file = optionalFile.get();
             file.setFilename(newName);
             try {
                 fileRepository.save(file);
-                return new ResponseEntity<>(ResponseMessage.OK, HttpStatus.OK);
             } catch (Exception e) {
-                return new ResponseEntity<>(new ConfirmOperationDTO(ERROR_UPLOAD), HttpStatus.INTERNAL_SERVER_ERROR);
+                throw new RuntimeException(ResponseMessage.ERROR_UPLOAD);
             }
         } else {
-            return new ResponseEntity<>(new ConfirmOperationDTO(BAD_REQUEST), HttpStatus.BAD_REQUEST);
+            throw new RuntimeException(ResponseMessage.BAD_REQUEST);
         }
     }
 
